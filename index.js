@@ -175,7 +175,104 @@ client.once('ready', async () => {
   setInterval(checkSightings, 30000);
 });
 
-// Keep Render alive
-http.createServer((req, res) => res.end('ok')).listen(process.env.PORT || 3000);
+// HTTP server - handles keepalive + Discord interactions
+import { verifyKey } from 'discord-interactions';
+
+const PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY;
+
+http.createServer(async (req, res) => {
+  if (req.method === 'POST' && req.url === '/interactions') {
+    const chunks = [];
+    req.on('data', chunk => chunks.push(chunk));
+    req.on('end', async () => {
+      const rawBody = Buffer.concat(chunks);
+      const signature = req.headers['x-signature-ed25519'];
+      const timestamp = req.headers['x-signature-timestamp'];
+
+      const isValid = verifyKey(rawBody, signature, timestamp, PUBLIC_KEY);
+      if (!isValid) {
+        res.writeHead(401);
+        res.end('Invalid signature');
+        return;
+      }
+
+      const interaction = JSON.parse(rawBody.toString());
+
+      if (interaction.type === 1) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ type: 1 }));
+        return;
+      }
+
+      if (interaction.type === 2) {
+        const name = interaction.data.name;
+
+        if (name === 'eggs') {
+          const islandName = interaction.data.options.find(o => o.name === 'island')?.value;
+          const island = ISLANDS.find(i => i.name === islandName);
+          if (!island) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ type: 4, data: { content: 'Island not found!', flags: 64 } }));
+            return;
+          }
+          const spawnList = island.spawns.map(s => {
+            const rarity = ER[s.egg] || 'Common';
+            const em = RE[rarity];
+            return `${em} **${s.egg}** — ${s.pct}%`;
+          }).join('
+') || 'No eggs';
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            type: 4,
+            data: {
+              embeds: [{
+                title: `🏝️ ${island.name}`,
+                color: 0xf0a500,
+                description: `**#${island.num}** — 🥚 ${island.spots} spawn spot${island.spots !== 1 ? 's' : ''}`,
+                fields: [{ name: 'Egg Spawn Rates', value: spawnList }],
+                footer: { text: 'HTTYD Egg Tracker • beboreport1-ops.github.io/httyd-egg-tracker' }
+              }]
+            }
+          }));
+          return;
+        }
+
+        if (name === 'find') {
+          const eggName = interaction.data.options.find(o => o.name === 'egg')?.value;
+          const results = ISLANDS.filter(i => i.spawns.some(s => s.egg === eggName));
+          const rarity = ER[eggName] || 'Common';
+          const em = RE[rarity];
+          const islandList = results.map(i => {
+            const spawn = i.spawns.find(s => s.egg === eggName);
+            return `🏝️ **${i.name}** — ${spawn.pct}% (${i.spots} spot${i.spots !== 1 ? 's' : ''})`;
+          }).join('
+') || 'Not found anywhere';
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            type: 4,
+            data: {
+              embeds: [{
+                title: `${em} ${eggName}`,
+                color: 0xf0a500,
+                description: `**Rarity:** ${rarity}\n**Found on ${results.length} island${results.length !== 1 ? 's' : ''}:**`,
+                fields: [{ name: 'Islands', value: islandList }],
+                footer: { text: 'HTTYD Egg Tracker • beboreport1-ops.github.io/httyd-egg-tracker' }
+              }]
+            }
+          }));
+          return;
+        }
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ type: 1 }));
+    });
+  } else {
+    res.writeHead(200);
+    res.end('ok');
+  }
+}).listen(process.env.PORT || 3000);
 
 client.login(TOKEN);
