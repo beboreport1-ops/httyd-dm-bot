@@ -15,6 +15,7 @@ const GUILD_IDS = ['1398443076393107628', '1376289128169082960'];
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 let lastSeen = {};
+const BOT_START = Date.now();
 
 const ER = {
   'Bronze Egg':'Common','Moss Egg':'Common','Verdant Egg':'Common',
@@ -99,6 +100,7 @@ async function checkSightings() {
         for (const s of data.sightings) {
           const key = s.color + '_' + s.createdAt + '_' + guildId;
           if (lastSeen[key]) continue;
+          if (new Date(s.createdAt).getTime() < BOT_START) continue;
           lastSeen[key] = true;
           const role = guild.roles.cache.find(r => r.name === ROLE_NAME);
           if (!role) continue;
