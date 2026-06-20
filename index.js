@@ -193,6 +193,12 @@ http.createServer((req, res) => {
   }
 }).listen(process.env.PORT || 3000);
 
+client.once('clientReady', async (c) => {
+  console.log(`Bot ready as ${c.user.tag}`);
+  checkSightings();
+  setInterval(checkSightings, 30000);
+});
+
 client.login(TOKEN);
 
 // Self-ping every 10 minutes to prevent Render from sleeping
