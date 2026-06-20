@@ -194,3 +194,9 @@ http.createServer((req, res) => {
 }).listen(process.env.PORT || 3000);
 
 client.login(TOKEN);
+
+// Self-ping every 10 minutes to prevent Render from sleeping
+setInterval(() => {
+  fetch('https://httyd-dm-bot.onrender.com').catch(() => {});
+  console.log('Self-ping sent');
+}, 10 * 60 * 1000);
