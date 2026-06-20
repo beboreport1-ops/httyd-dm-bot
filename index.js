@@ -74,13 +74,21 @@ const ALL_EGGS = [...new Set(ISLANDS.flatMap(i => i.spawns.map(s => s.egg)))].so
 
 // Commands handled by Lovable — no registration needed here
 
+async function getMembersWithRole(guild, roleName) {
+  const role = guild.roles.cache.find(r => r.name === roleName);
+  if (!role) return [];
+  // Fetch only members with this specific role instead of all members
+  const members = await guild.members.fetch({ force: false });
+  return members.filter(m => m.roles.cache.has(role.id) && !m.user.bot);
+}
+
 async function checkSightings() {
   try {
     const res = await fetch(API_URL);
     const data = await res.json();
     if (!data.sightings) return;
 
-    // Check for new sightings first before fetching members
+    // Check for new sightings first
     const newSightings = [];
     for (const s of data.sightings) {
       if (new Date(s.createdAt).getTime() < BOT_START) continue;
@@ -92,37 +100,37 @@ async function checkSightings() {
 
     if (newSightings.length === 0) return;
 
+    console.log(`New sightings found: ${newSightings.length}`);
+
     for (const guildId of GUILD_IDS) {
       const guildSightings = newSightings.filter(n => n.guildId === guildId);
       if (guildSightings.length === 0) continue;
       try {
         const guild = await client.guilds.fetch(guildId);
-        await guild.members.fetch();
-        const role = guild.roles.cache.find(r => r.name === ROLE_NAME);
-        if (!role) continue;
-        const members = guild.members.cache.filter(m => m.roles.cache.has(role.id) && !m.user.bot);
+        const role = (await guild.roles.fetch()).find(r => r.name === ROLE_NAME);
+        if (!role) { console.log(`Role "${ROLE_NAME}" not found in guild ${guildId}`); continue; }
+        
+        // Fetch only members with the specific role
+        const members = await guild.members.fetch({ force: false });
+        const targets = members.filter(m => m.roles.cache.has(role.id) && !m.user.bot);
+        console.log(`Found ${targets.size} members with role in guild ${guildId}`);
+
         for (const { s, key } of guildSightings) {
           lastSeen[key] = true;
-          for (const [, member] of members) {
+          for (const [, member] of targets) {
             try {
               await member.send(`🌀 **${s.color} Spiral Egg spotted!**
 Reported by **${s.reportedBy}** in Discord
 You have ~50 minutes to pick it up!
 
 https://beboreport1-ops.github.io/httyd-egg-tracker/`);
-            } catch {}
+            } catch (e) { console.log(`Failed to DM ${member.user.tag}: ${e.message}`); }
           }
         }
       } catch (e) { console.error(`Guild ${guildId} failed:`, e.message); }
     }
   } catch (e) { console.error('Check failed:', e.message); }
 }
-
-client.once('ready', async () => {
-  console.log(`Bot ready as ${client.user.tag}`);
-  checkSightings();
-  setInterval(checkSightings, 30000);
-});
 
 // HTTP server
 http.createServer((req, res) => {
