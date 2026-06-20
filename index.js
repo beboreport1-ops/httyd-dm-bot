@@ -12,7 +12,7 @@ const client = new Client({
 
 const API_URL = 'https://cosmic-spiral-whisper.lovable.app/api/spiral-sightings';
 const ROLE_NAME = 'Spiral Egg Ping';
-const GUILD_IDS = ['1398443076393107628', '1376289128169082960'];
+const GUILD_IDS = ['1376289128169082960']; // Add 1398443076393107628 once bot is in that server
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY;
