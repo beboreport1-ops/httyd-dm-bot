@@ -1,7 +1,7 @@
 import fetch from 'node-fetch';
 import http from 'http';
 import nacl from 'tweetnacl';
-import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js';
+import { Client, GatewayIntentBits } from 'discord.js';
 
 const client = new Client({
   intents: [
@@ -72,32 +72,7 @@ const ISLANDS = [
 
 const ALL_EGGS = [...new Set(ISLANDS.flatMap(i => i.spawns.map(s => s.egg)))].sort();
 
-const commands = [
-  new SlashCommandBuilder()
-    .setName('eggs')
-    .setDescription('Show egg spawn info for an island')
-    .addStringOption(opt =>
-      opt.setName('island').setDescription('Choose an island').setRequired(true)
-        .addChoices(...ISLANDS.filter(i => i.spots > 0 && !i.isSpiral).map(i => ({ name: i.name, value: i.name })))
-    ),
-  new SlashCommandBuilder()
-    .setName('find')
-    .setDescription('Find which islands spawn a specific egg')
-    .addStringOption(opt =>
-      opt.setName('egg').setDescription('Choose an egg type').setRequired(true)
-        .addChoices(...ALL_EGGS.map(e => ({ name: e, value: e })))
-    ),
-].map(cmd => cmd.toJSON());
-
-async function registerCommands() {
-  const rest = new REST({ version: '10' }).setToken(TOKEN);
-  for (const guildId of GUILD_IDS) {
-    try {
-      await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: commands });
-      console.log(`Commands registered for guild ${guildId}`);
-    } catch (e) { console.error(`Failed for guild ${guildId}:`, e.message); }
-  }
-}
+// Commands handled by Lovable — no registration needed here
 
 async function checkSightings() {
   try {
@@ -129,7 +104,6 @@ async function checkSightings() {
 
 client.once('ready', async () => {
   console.log(`Bot ready as ${client.user.tag}`);
-  await registerCommands();
   checkSightings();
   setInterval(checkSightings, 30000);
 });
