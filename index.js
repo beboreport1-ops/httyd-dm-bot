@@ -1,4 +1,5 @@
 import fetch from 'node-fetch';
+import http from 'http';
 import { Client, GatewayIntentBits } from 'discord.js';
 
 const client = new Client({
@@ -43,5 +44,8 @@ client.once('ready', () => {
   checkSightings();
   setInterval(checkSightings, 30000);
 });
+
+// Keep Render alive
+http.createServer((req, res) => res.end('ok')).listen(process.env.PORT || 3000);
 
 client.login(process.env.DISCORD_TOKEN);
