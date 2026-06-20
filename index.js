@@ -1,6 +1,7 @@
 import fetch from 'node-fetch';
 import http from 'http';
-import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import nacl from 'tweetnacl';
+import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js';
 
 const client = new Client({
   intents: [
@@ -14,8 +15,26 @@ const ROLE_NAME = 'Spiral Egg Ping';
 const GUILD_IDS = ['1398443076393107628', '1376289128169082960'];
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
+const PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY;
 let lastSeen = {};
 const BOT_START = Date.now();
+
+function hexToBytes(hex) {
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.slice(i*2, i*2+2), 16);
+  return out;
+}
+
+function verifySignature(signature, timestamp, rawBody) {
+  try {
+    const msg = Buffer.concat([Buffer.from(timestamp), rawBody]);
+    return nacl.sign.detached.verify(
+      new Uint8Array(msg),
+      hexToBytes(signature),
+      hexToBytes(PUBLIC_KEY)
+    );
+  } catch { return false; }
+}
 
 const ER = {
   'Bronze Egg':'Common','Moss Egg':'Common','Verdant Egg':'Common',
@@ -24,7 +43,6 @@ const ER = {
   'Flameclaw Egg':'Legendary','Glacier Egg':'Legendary','Magma Egg':'Legendary','Emerald Egg':'Legendary','Celestial Egg':'Legendary','Speckled Egg':'Legendary','Crimson Egg (Legendary)':'Legendary',
   'Amethyst Egg':'Mythic','Eclipse Egg':'Mythic','Obsidian Egg':'Mythic','Shadow Egg':'Mythic','Storm Egg':'Mythic'
 };
-
 const RE = {Common:'🟢',Rare:'🔵',Epic:'🟣',Legendary:'🟠',Mythic:'🔴'};
 
 const ISLANDS = [
@@ -52,7 +70,6 @@ const ISLANDS = [
   {num:22, name:'Ship Graveyard', spots:6, spawns:[{egg:'Amethyst Egg',pct:25},{egg:'Eclipse Egg',pct:22},{egg:'Obsidian Egg',pct:18},{egg:'Shadow Egg',pct:15},{egg:'Storm Egg',pct:12},{egg:'Celestial Egg',pct:8}]},
 ];
 
-// Get all unique egg names
 const ALL_EGGS = [...new Set(ISLANDS.flatMap(i => i.spawns.map(s => s.egg)))].sort();
 
 const commands = [
@@ -60,18 +77,14 @@ const commands = [
     .setName('eggs')
     .setDescription('Show egg spawn info for an island')
     .addStringOption(opt =>
-      opt.setName('island')
-        .setDescription('Choose an island')
-        .setRequired(true)
+      opt.setName('island').setDescription('Choose an island').setRequired(true)
         .addChoices(...ISLANDS.filter(i => i.spots > 0 && !i.isSpiral).map(i => ({ name: i.name, value: i.name })))
     ),
   new SlashCommandBuilder()
     .setName('find')
     .setDescription('Find which islands spawn a specific egg')
     .addStringOption(opt =>
-      opt.setName('egg')
-        .setDescription('Choose an egg type')
-        .setRequired(true)
+      opt.setName('egg').setDescription('Choose an egg type').setRequired(true)
         .addChoices(...ALL_EGGS.map(e => ({ name: e, value: e })))
     ),
 ].map(cmd => cmd.toJSON());
@@ -82,9 +95,7 @@ async function registerCommands() {
     try {
       await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: commands });
       console.log(`Commands registered for guild ${guildId}`);
-    } catch (e) {
-      console.error(`Failed to register for guild ${guildId}:`, e.message);
-    }
+    } catch (e) { console.error(`Failed for guild ${guildId}:`, e.message); }
   }
 }
 
@@ -111,62 +122,10 @@ async function checkSightings() {
             } catch {}
           }
         }
-      } catch (e) {
-        console.error(`Guild ${guildId} failed:`, e.message);
-      }
+      } catch (e) { console.error(`Guild ${guildId} failed:`, e.message); }
     }
-  } catch (e) {
-    console.error('Check failed:', e.message);
-  }
+  } catch (e) { console.error('Check failed:', e.message); }
 }
-
-client.on('interactionCreate', async interaction => {
-  if (!interaction.isChatInputCommand()) return;
-
-  if (interaction.commandName === 'eggs') {
-    const islandName = interaction.options.getString('island');
-    const island = ISLANDS.find(i => i.name === islandName);
-    if (!island) return interaction.reply({ content: 'Island not found!', ephemeral: true });
-
-    const embed = new EmbedBuilder()
-      .setTitle(`🏝️ ${island.name}`)
-      .setColor(0xf0a500)
-      .setDescription(`**#${island.num}** — 🥚 ${island.spots} spawn spot${island.spots !== 1 ? 's' : ''}`)
-      .addFields({
-        name: 'Egg Spawn Rates',
-        value: island.spawns.map(s => {
-          const rarity = ER[s.egg] || 'Common';
-          const em = RE[rarity];
-          return `${em} **${s.egg}** — ${s.pct}%`;
-        }).join('\n') || 'No eggs'
-      })
-      .setFooter({ text: 'HTTYD Egg Tracker • beboreport1-ops.github.io/httyd-egg-tracker' });
-
-    await interaction.reply({ embeds: [embed] });
-  }
-
-  if (interaction.commandName === 'find') {
-    const eggName = interaction.options.getString('egg');
-    const results = ISLANDS.filter(i => i.spawns.some(s => s.egg === eggName));
-    const rarity = ER[eggName] || 'Common';
-    const em = RE[rarity];
-
-    const embed = new EmbedBuilder()
-      .setTitle(`${em} ${eggName}`)
-      .setColor(0xf0a500)
-      .setDescription(`**Rarity:** ${rarity}\n**Found on ${results.length} island${results.length !== 1 ? 's' : ''}:**`)
-      .addFields({
-        name: 'Islands',
-        value: results.map(i => {
-          const spawn = i.spawns.find(s => s.egg === eggName);
-          return `🏝️ **${i.name}** — ${spawn.pct}% (${i.spots} spot${i.spots !== 1 ? 's' : ''})`;
-        }).join('\n') || 'Not found anywhere'
-      })
-      .setFooter({ text: 'HTTYD Egg Tracker • beboreport1-ops.github.io/httyd-egg-tracker' });
-
-    await interaction.reply({ embeds: [embed] });
-  }
-});
 
 client.once('ready', async () => {
   console.log(`Bot ready as ${client.user.tag}`);
@@ -175,22 +134,17 @@ client.once('ready', async () => {
   setInterval(checkSightings, 30000);
 });
 
-// HTTP server - handles keepalive + Discord interactions
-import { verifyKey } from 'discord-interactions';
-
-const PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY;
-
-http.createServer(async (req, res) => {
+// HTTP server
+http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/interactions') {
     const chunks = [];
     req.on('data', chunk => chunks.push(chunk));
-    req.on('end', async () => {
+    req.on('end', () => {
       const rawBody = Buffer.concat(chunks);
       const signature = req.headers['x-signature-ed25519'];
       const timestamp = req.headers['x-signature-timestamp'];
 
-      const isValid = verifyKey(rawBody, signature, timestamp, PUBLIC_KEY);
-      if (!isValid) {
+      if (!verifySignature(signature, timestamp, rawBody)) {
         res.writeHead(401);
         res.end('Invalid signature');
         return;
@@ -208,60 +162,26 @@ http.createServer(async (req, res) => {
         const name = interaction.data.name;
 
         if (name === 'eggs') {
-          const islandName = interaction.data.options.find(o => o.name === 'island')?.value;
+          const islandName = interaction.data.options?.find(o => o.name === 'island')?.value;
           const island = ISLANDS.find(i => i.name === islandName);
           if (!island) {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ type: 4, data: { content: 'Island not found!', flags: 64 } }));
             return;
           }
-          const spawnList = island.spawns.map(s => {
-            const rarity = ER[s.egg] || 'Common';
-            const em = RE[rarity];
-            return `${em} **${s.egg}** — ${s.pct}%`;
-          }).join('
-') || 'No eggs';
-
+          const spawnList = island.spawns.map(s => `${RE[ER[s.egg]||'Common']} **${s.egg}** — ${s.pct}%`).join('\n') || 'No eggs';
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            type: 4,
-            data: {
-              embeds: [{
-                title: `🏝️ ${island.name}`,
-                color: 0xf0a500,
-                description: `**#${island.num}** — 🥚 ${island.spots} spawn spot${island.spots !== 1 ? 's' : ''}`,
-                fields: [{ name: 'Egg Spawn Rates', value: spawnList }],
-                footer: { text: 'HTTYD Egg Tracker • beboreport1-ops.github.io/httyd-egg-tracker' }
-              }]
-            }
-          }));
+          res.end(JSON.stringify({ type: 4, data: { embeds: [{ title: `🏝️ ${island.name}`, color: 0xf0a500, description: `**#${island.num}** — 🥚 ${island.spots} spawn spot${island.spots!==1?'s':''}`, fields: [{ name: 'Egg Spawn Rates', value: spawnList }], footer: { text: 'HTTYD Egg Tracker • beboreport1-ops.github.io/httyd-egg-tracker' } }] } }));
           return;
         }
 
         if (name === 'find') {
-          const eggName = interaction.data.options.find(o => o.name === 'egg')?.value;
+          const eggName = interaction.data.options?.find(o => o.name === 'egg')?.value;
           const results = ISLANDS.filter(i => i.spawns.some(s => s.egg === eggName));
           const rarity = ER[eggName] || 'Common';
-          const em = RE[rarity];
-          const islandList = results.map(i => {
-            const spawn = i.spawns.find(s => s.egg === eggName);
-            return `🏝️ **${i.name}** — ${spawn.pct}% (${i.spots} spot${i.spots !== 1 ? 's' : ''})`;
-          }).join('
-') || 'Not found anywhere';
-
+          const islandList = results.map(i => { const spawn = i.spawns.find(s => s.egg === eggName); return `🏝️ **${i.name}** — ${spawn.pct}% (${i.spots} spot${i.spots!==1?'s':''})`; }).join('\n') || 'Not found anywhere';
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            type: 4,
-            data: {
-              embeds: [{
-                title: `${em} ${eggName}`,
-                color: 0xf0a500,
-                description: `**Rarity:** ${rarity}\n**Found on ${results.length} island${results.length !== 1 ? 's' : ''}:**`,
-                fields: [{ name: 'Islands', value: islandList }],
-                footer: { text: 'HTTYD Egg Tracker • beboreport1-ops.github.io/httyd-egg-tracker' }
-              }]
-            }
-          }));
+          res.end(JSON.stringify({ type: 4, data: { embeds: [{ title: `${RE[rarity]} ${eggName}`, color: 0xf0a500, description: `**Rarity:** ${rarity}\n**Found on ${results.length} island${results.length!==1?'s':''}:**`, fields: [{ name: 'Islands', value: islandList }], footer: { text: 'HTTYD Egg Tracker • beboreport1-ops.github.io/httyd-egg-tracker' } }] } }));
           return;
         }
       }
