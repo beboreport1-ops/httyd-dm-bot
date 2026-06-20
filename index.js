@@ -1,6 +1,6 @@
 import fetch from 'node-fetch';
 import http from 'http';
-import { Client, GatewayIntentBits } from 'discord.js';
+import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 
 const client = new Client({
   intents: [
@@ -12,14 +12,86 @@ const client = new Client({
 const API_URL = 'https://cosmic-spiral-whisper.lovable.app/api/spiral-sightings';
 const ROLE_NAME = 'Spiral Egg Ping';
 const GUILD_IDS = ['1398443076393107628', '1376289128169082960'];
+const TOKEN = process.env.DISCORD_TOKEN;
+const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 let lastSeen = {};
+
+const ER = {
+  'Bronze Egg':'Common','Moss Egg':'Common','Verdant Egg':'Common',
+  'Sandstone Egg':'Rare','Orchid Egg':'Rare','Wave Egg':'Rare','Ocean Egg':'Rare',
+  'Floral Egg':'Epic','Prism Egg':'Epic','Venom Egg':'Epic','Emberflame Egg':'Epic','Crimson Egg (Epic)':'Epic',
+  'Flameclaw Egg':'Legendary','Glacier Egg':'Legendary','Magma Egg':'Legendary','Emerald Egg':'Legendary','Celestial Egg':'Legendary','Speckled Egg':'Legendary','Crimson Egg (Legendary)':'Legendary',
+  'Amethyst Egg':'Mythic','Eclipse Egg':'Mythic','Obsidian Egg':'Mythic','Shadow Egg':'Mythic','Storm Egg':'Mythic'
+};
+
+const RE = {Common:'🟢',Rare:'🔵',Epic:'🟣',Legendary:'🟠',Mythic:'🔴'};
+
+const ISLANDS = [
+  {num:1, name:'Berk', spots:2, spawns:[{egg:'Bronze Egg',pct:60},{egg:'Moss Egg',pct:30},{egg:'Sandstone Egg',pct:10}]},
+  {num:2, name:'Dragonroost Island', spots:2, spawns:[{egg:'Bronze Egg',pct:55},{egg:'Moss Egg',pct:30},{egg:'Sandstone Egg',pct:12},{egg:'Orchid Egg',pct:3}]},
+  {num:3, name:'Gateway Island', spots:2, spawns:[{egg:'Moss Egg',pct:45},{egg:'Sandstone Egg',pct:28},{egg:'Orchid Egg',pct:18},{egg:'Wave Egg',pct:6},{egg:'Crimson Egg (Epic)',pct:3}]},
+  {num:4, name:'Sheep Island', spots:2, spawns:[{egg:'Sandstone Egg',pct:38},{egg:'Orchid Egg',pct:28},{egg:'Verdant Egg',pct:18},{egg:'Wave Egg',pct:12},{egg:'Crimson Egg (Epic)',pct:4}]},
+  {num:5, name:'Isle of Frigga', spots:3, spawns:[{egg:'Moss Egg',pct:40},{egg:'Sandstone Egg',pct:28},{egg:'Orchid Egg',pct:18},{egg:'Wave Egg',pct:10},{egg:'Crimson Egg (Epic)',pct:4}]},
+  {num:6, name:'Isle of Hollows', spots:3, spawns:[{egg:'Orchid Egg',pct:32},{egg:'Verdant Egg',pct:28},{egg:'Wave Egg',pct:20},{egg:'Ocean Egg',pct:15},{egg:'Crimson Egg (Epic)',pct:5}]},
+  {num:7, name:'Botany Blight', spots:1, spawns:[{egg:'Verdant Egg',pct:35},{egg:'Ocean Egg',pct:26},{egg:'Floral Egg',pct:18},{egg:'Prism Egg',pct:14},{egg:'Crimson Egg (Epic)',pct:7}]},
+  {num:8, name:'Meathead Island', spots:5, spawns:[{egg:'Verdant Egg',pct:30},{egg:'Ocean Egg',pct:24},{egg:'Floral Egg',pct:22},{egg:'Prism Egg',pct:16},{egg:'Crimson Egg (Epic)',pct:8}]},
+  {num:9, name:'Ancient Retreat', spots:1, spawns:[{egg:'Verdant Egg',pct:32},{egg:'Ocean Egg',pct:26},{egg:'Floral Egg',pct:20},{egg:'Prism Egg',pct:15},{egg:'Crimson Egg (Epic)',pct:7}]},
+  {num:10, name:'Gronckle Island', spots:3, spawns:[{egg:'Floral Egg',pct:30},{egg:'Venom Egg',pct:24},{egg:'Prism Egg',pct:20},{egg:'Emberflame Egg',pct:15},{egg:'Flameclaw Egg',pct:8},{egg:'Crimson Egg (Legendary)',pct:3}]},
+  {num:11, name:'Basalt Shores', spots:3, spawns:[{egg:'Floral Egg',pct:30},{egg:'Prism Egg',pct:25},{egg:'Venom Egg',pct:20},{egg:'Ocean Egg',pct:15},{egg:'Emberflame Egg',pct:7},{egg:'Flameclaw Egg',pct:3}]},
+  {num:12, name:'Whispering Dunes', spots:0, spawns:[]},
+  {num:13, name:'Breakneck Bog', spots:5, spawns:[{egg:'Venom Egg',pct:28},{egg:'Emberflame Egg',pct:24},{egg:'Flameclaw Egg',pct:18},{egg:'Crimson Egg (Legendary)',pct:15},{egg:'Floral Egg',pct:10},{egg:'Glacier Egg',pct:5}]},
+  {num:14, name:'Twin Flame Island', spots:0, spawns:[]},
+  {num:15, name:'Flaming Forest', spots:6, spawns:[{egg:'Glacier Egg',pct:26},{egg:'Magma Egg',pct:22},{egg:'Emerald Egg',pct:18},{egg:'Celestial Egg',pct:15},{egg:'Crimson Egg (Legendary)',pct:12},{egg:'Eclipse Egg',pct:5},{egg:'Amethyst Egg',pct:2}]},
+  {num:16, name:'Spiral Island', spots:3, spawns:[], isSpiral:true},
+  {num:17, name:'Wild Island', spots:2, spawns:[{egg:'Flameclaw Egg',pct:28},{egg:'Crimson Egg (Legendary)',pct:24},{egg:'Glacier Egg',pct:20},{egg:'Magma Egg',pct:15},{egg:'Emerald Egg',pct:9},{egg:'Celestial Egg',pct:4}]},
+  {num:18, name:"Odin's Respite", spots:0, spawns:[]},
+  {num:19, name:'Crown Island', spots:3, spawns:[{egg:'Magma Egg',pct:25},{egg:'Emerald Egg',pct:22},{egg:'Celestial Egg',pct:18},{egg:'Glacier Egg',pct:15},{egg:'Eclipse Egg',pct:10},{egg:'Amethyst Egg',pct:7},{egg:'Obsidian Egg',pct:3}]},
+  {num:20, name:'Standing Stones', spots:3, spawns:[{egg:'Celestial Egg',pct:25},{egg:'Eclipse Egg',pct:20},{egg:'Amethyst Egg',pct:17},{egg:'Obsidian Egg',pct:14},{egg:'Emerald Egg',pct:12},{egg:'Shadow Egg',pct:8},{egg:'Storm Egg',pct:4}]},
+  {num:21, name:'Sea Stack', spots:0, spawns:[]},
+  {num:22, name:'Ship Graveyard', spots:6, spawns:[{egg:'Amethyst Egg',pct:25},{egg:'Eclipse Egg',pct:22},{egg:'Obsidian Egg',pct:18},{egg:'Shadow Egg',pct:15},{egg:'Storm Egg',pct:12},{egg:'Celestial Egg',pct:8}]},
+];
+
+// Get all unique egg names
+const ALL_EGGS = [...new Set(ISLANDS.flatMap(i => i.spawns.map(s => s.egg)))].sort();
+
+const commands = [
+  new SlashCommandBuilder()
+    .setName('eggs')
+    .setDescription('Show egg spawn info for an island')
+    .addStringOption(opt =>
+      opt.setName('island')
+        .setDescription('Choose an island')
+        .setRequired(true)
+        .addChoices(...ISLANDS.filter(i => i.spots > 0 && !i.isSpiral).map(i => ({ name: i.name, value: i.name })))
+    ),
+  new SlashCommandBuilder()
+    .setName('find')
+    .setDescription('Find which islands spawn a specific egg')
+    .addStringOption(opt =>
+      opt.setName('egg')
+        .setDescription('Choose an egg type')
+        .setRequired(true)
+        .addChoices(...ALL_EGGS.map(e => ({ name: e, value: e })))
+    ),
+].map(cmd => cmd.toJSON());
+
+async function registerCommands() {
+  const rest = new REST({ version: '10' }).setToken(TOKEN);
+  for (const guildId of GUILD_IDS) {
+    try {
+      await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: commands });
+      console.log(`Commands registered for guild ${guildId}`);
+    } catch (e) {
+      console.error(`Failed to register for guild ${guildId}:`, e.message);
+    }
+  }
+}
 
 async function checkSightings() {
   try {
     const res = await fetch(API_URL);
     const data = await res.json();
     if (!data.sightings) return;
-
     for (const guildId of GUILD_IDS) {
       try {
         const guild = await client.guilds.fetch(guildId);
@@ -46,8 +118,57 @@ async function checkSightings() {
   }
 }
 
-client.once('ready', () => {
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+
+  if (interaction.commandName === 'eggs') {
+    const islandName = interaction.options.getString('island');
+    const island = ISLANDS.find(i => i.name === islandName);
+    if (!island) return interaction.reply({ content: 'Island not found!', ephemeral: true });
+
+    const embed = new EmbedBuilder()
+      .setTitle(`🏝️ ${island.name}`)
+      .setColor(0xf0a500)
+      .setDescription(`**#${island.num}** — 🥚 ${island.spots} spawn spot${island.spots !== 1 ? 's' : ''}`)
+      .addFields({
+        name: 'Egg Spawn Rates',
+        value: island.spawns.map(s => {
+          const rarity = ER[s.egg] || 'Common';
+          const em = RE[rarity];
+          return `${em} **${s.egg}** — ${s.pct}%`;
+        }).join('\n') || 'No eggs'
+      })
+      .setFooter({ text: 'HTTYD Egg Tracker • beboreport1-ops.github.io/httyd-egg-tracker' });
+
+    await interaction.reply({ embeds: [embed] });
+  }
+
+  if (interaction.commandName === 'find') {
+    const eggName = interaction.options.getString('egg');
+    const results = ISLANDS.filter(i => i.spawns.some(s => s.egg === eggName));
+    const rarity = ER[eggName] || 'Common';
+    const em = RE[rarity];
+
+    const embed = new EmbedBuilder()
+      .setTitle(`${em} ${eggName}`)
+      .setColor(0xf0a500)
+      .setDescription(`**Rarity:** ${rarity}\n**Found on ${results.length} island${results.length !== 1 ? 's' : ''}:**`)
+      .addFields({
+        name: 'Islands',
+        value: results.map(i => {
+          const spawn = i.spawns.find(s => s.egg === eggName);
+          return `🏝️ **${i.name}** — ${spawn.pct}% (${i.spots} spot${i.spots !== 1 ? 's' : ''})`;
+        }).join('\n') || 'Not found anywhere'
+      })
+      .setFooter({ text: 'HTTYD Egg Tracker • beboreport1-ops.github.io/httyd-egg-tracker' });
+
+    await interaction.reply({ embeds: [embed] });
+  }
+});
+
+client.once('ready', async () => {
   console.log(`Bot ready as ${client.user.tag}`);
+  await registerCommands();
   checkSightings();
   setInterval(checkSightings, 30000);
 });
@@ -55,4 +176,4 @@ client.once('ready', () => {
 // Keep Render alive
 http.createServer((req, res) => res.end('ok')).listen(process.env.PORT || 3000);
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(TOKEN);
