@@ -79,21 +79,37 @@ async function checkSightings() {
     const res = await fetch(API_URL);
     const data = await res.json();
     if (!data.sightings) return;
+
+    // Check for new sightings first before fetching members
+    const newSightings = [];
+    for (const s of data.sightings) {
+      if (new Date(s.createdAt).getTime() < BOT_START) continue;
+      for (const guildId of GUILD_IDS) {
+        const key = s.color + '_' + s.createdAt + '_' + guildId;
+        if (!lastSeen[key]) newSightings.push({ s, guildId, key });
+      }
+    }
+
+    if (newSightings.length === 0) return;
+
     for (const guildId of GUILD_IDS) {
+      const guildSightings = newSightings.filter(n => n.guildId === guildId);
+      if (guildSightings.length === 0) continue;
       try {
         const guild = await client.guilds.fetch(guildId);
         await guild.members.fetch();
-        for (const s of data.sightings) {
-          const key = s.color + '_' + s.createdAt + '_' + guildId;
-          if (lastSeen[key]) continue;
-          if (new Date(s.createdAt).getTime() < BOT_START) continue;
+        const role = guild.roles.cache.find(r => r.name === ROLE_NAME);
+        if (!role) continue;
+        const members = guild.members.cache.filter(m => m.roles.cache.has(role.id) && !m.user.bot);
+        for (const { s, key } of guildSightings) {
           lastSeen[key] = true;
-          const role = guild.roles.cache.find(r => r.name === ROLE_NAME);
-          if (!role) continue;
-          const members = guild.members.cache.filter(m => m.roles.cache.has(role.id) && !m.user.bot);
           for (const [, member] of members) {
             try {
-              await member.send(`🌀 **${s.color} Spiral Egg spotted!**\nReported by **${s.reportedBy}** in Discord\nYou have ~50 minutes to pick it up!\n\nhttps://beboreport1-ops.github.io/httyd-egg-tracker/`);
+              await member.send(`🌀 **${s.color} Spiral Egg spotted!**
+Reported by **${s.reportedBy}** in Discord
+You have ~50 minutes to pick it up!
+
+https://beboreport1-ops.github.io/httyd-egg-tracker/`);
             } catch {}
           }
         }
