@@ -11,7 +11,7 @@ const client = new Client({
 
 const API_URL = 'https://cosmic-spiral-whisper.lovable.app/api/spiral-sightings';
 const ROLE_NAME = 'Spiral Egg Ping';
-const GUILD_ID = process.env.GUILD_ID;
+const GUILD_IDS = ['1398443076393107628', '1376289128169082960'];
 let lastSeen = {};
 
 async function checkSightings() {
@@ -19,19 +19,26 @@ async function checkSightings() {
     const res = await fetch(API_URL);
     const data = await res.json();
     if (!data.sightings) return;
-    const guild = await client.guilds.fetch(GUILD_ID);
-    await guild.members.fetch();
-    for (const s of data.sightings) {
-      const key = s.color + '_' + s.createdAt;
-      if (lastSeen[s.color] === key) continue;
-      lastSeen[s.color] = key;
-      const role = guild.roles.cache.find(r => r.name === ROLE_NAME);
-      if (!role) continue;
-      const members = guild.members.cache.filter(m => m.roles.cache.has(role.id) && !m.user.bot);
-      for (const [, member] of members) {
-        try {
-          await member.send(`🌀 **${s.color} Spiral Egg spotted!**\nReported by **${s.reportedBy}** in Discord\nYou have ~50 minutes to pick it up!\n\nhttps://beboreport1-ops.github.io/httyd-egg-tracker/`);
-        } catch {}
+
+    for (const guildId of GUILD_IDS) {
+      try {
+        const guild = await client.guilds.fetch(guildId);
+        await guild.members.fetch();
+        for (const s of data.sightings) {
+          const key = s.color + '_' + s.createdAt + '_' + guildId;
+          if (lastSeen[key]) continue;
+          lastSeen[key] = true;
+          const role = guild.roles.cache.find(r => r.name === ROLE_NAME);
+          if (!role) continue;
+          const members = guild.members.cache.filter(m => m.roles.cache.has(role.id) && !m.user.bot);
+          for (const [, member] of members) {
+            try {
+              await member.send(`🌀 **${s.color} Spiral Egg spotted!**\nReported by **${s.reportedBy}** in Discord\nYou have ~50 minutes to pick it up!\n\nhttps://beboreport1-ops.github.io/httyd-egg-tracker/`);
+            } catch {}
+          }
+        }
+      } catch (e) {
+        console.error(`Guild ${guildId} failed:`, e.message);
       }
     }
   } catch (e) {
