@@ -11,6 +11,8 @@ const client = new Client({
 });
 
 const API_URL = 'https://cosmic-spiral-whisper.lovable.app/api/spiral-sightings';
+const READY_URL = 'https://cosmic-spiral-whisper.lovable.app/api/public/ready-users';
+const notifiedReady = new Set(); // track who we already DMed this cycle
 const ROLE_NAME = 'Spiral Egg Ping';
 const GUILD_IDS = ['1376289128169082960']; // Add 1398443076393107628 once bot is in that server
 const TOKEN = process.env.DISCORD_TOKEN;
@@ -73,6 +75,51 @@ const ISLANDS = [
 const ALL_EGGS = [...new Set(ISLANDS.flatMap(i => i.spawns.map(s => s.egg)))].sort();
 
 // Commands handled by Lovable — no registration needed here
+
+async function checkReadyUsers() {
+  try {
+    const res = await fetch(READY_URL);
+    const data = await res.json();
+    if (!data.users || data.users.length === 0) return;
+
+    for (const user of data.users) {
+      const key = user.discord_user_id + '_ready';
+      if (notifiedReady.has(key)) continue;
+      notifiedReady.add(key);
+
+      // Find the user in any guild and DM them
+      for (const guildId of GUILD_IDS) {
+        try {
+          const guild = await client.guilds.fetch(guildId);
+          const member = await guild.members.fetch(user.discord_user_id).catch(() => null);
+          if (!member) continue;
+
+          await member.send({
+            embeds: [{
+              title: '🥚 All Eggs Ready!',
+              description: `All **${user.total_collected}** of your collected islands are off cooldown and ready to collect again!`,
+              color: 0x57f287,
+              fields: [
+                {
+                  name: '🏝️ Ready Islands',
+                  value: `${user.ready_count} island${user.ready_count !== 1 ? 's' : ''} ready`
+                }
+              ],
+              footer: { text: 'HTTYD Egg Tracker • Time to collect!' },
+              url: 'https://beboreport1-ops.github.io/httyd-egg-tracker/'
+            }]
+          });
+          console.log(\`DMed \${user.username} — all eggs ready\`);
+          break;
+        } catch (e) {
+          console.log(\`Failed to DM \${user.username}: \${e.message}\`);
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Ready check failed:', e.message);
+  }
+}
 
 async function getMembersWithRole(guild, roleName) {
   const role = guild.roles.cache.find(r => r.name === roleName);
@@ -197,6 +244,8 @@ client.once('clientReady', async (c) => {
   console.log(`Bot ready as ${c.user.tag}`);
   checkSightings();
   setInterval(checkSightings, 30000);
+  checkReadyUsers();
+  setInterval(checkReadyUsers, 5 * 60 * 1000);
 });
 
 client.login(TOKEN);
