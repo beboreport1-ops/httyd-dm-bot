@@ -109,10 +109,10 @@ async function checkReadyUsers() {
               url: 'https://beboreport1-ops.github.io/httyd-egg-tracker/'
             }]
           });
-          console.log(\`DMed \${user.username} — all eggs ready\`);
+          console.log(`DMed ${user.username} — all eggs ready`);
           break;
         } catch (e) {
-          console.log(\`Failed to DM \${user.username}: \${e.message}\`);
+          console.log(`Failed to DM ${user.username}: ${e.message}`);
         }
       }
     }
