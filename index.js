@@ -245,7 +245,7 @@ client.once('clientReady', async (c) => {
   checkSightings();
   setInterval(checkSightings, 30000);
   checkReadyUsers();
-  setInterval(checkReadyUsers, 5 * 60 * 1000);
+  setInterval(checkReadyUsers, 3 * 60 * 1000);
 });
 
 client.login(TOKEN);
