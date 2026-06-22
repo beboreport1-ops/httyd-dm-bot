@@ -12,8 +12,16 @@ const client = new Client({
 
 const API_URL = 'https://cosmic-spiral-whisper.lovable.app/api/spiral-sightings';
 const READY_URL = 'https://cosmic-spiral-whisper.lovable.app/api/public/ready-users';
+const PING_ROLE_URL = 'https://cosmic-spiral-whisper.lovable.app/api/guild-ping-role';
 const notifiedReady = new Set();
-const ROLE_NAME = 'Spiral Egg Ping';
+
+async function getPingRoleId(guildId) {
+  try {
+    const res = await fetch(`${PING_ROLE_URL}?guild_id=${guildId}`);
+    const data = await res.json();
+    return data.role_id || null;
+  } catch { return null; }
+}
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY;
@@ -138,13 +146,12 @@ async function checkSightings() {
       const guildSightings = newSightings.filter(n => n.guildId === guildId);
       if (guildSightings.length === 0) continue;
       try {
-        const roles = await guild.roles.fetch();
-        const role = roles.find(r => r.name === ROLE_NAME);
-        if (!role) { console.log(`Role "${ROLE_NAME}" not found in guild ${guildId}`); continue; }
+        const pingRoleId = await getPingRoleId(guildId);
+        if (!pingRoleId) { console.log(`No ping role configured for guild ${guildId}, skipping DMs`); continue; }
 
         const members = await guild.members.fetch({ force: false });
-        const targets = members.filter(m => m.roles.cache.has(role.id) && !m.user.bot);
-        console.log(`Found ${targets.size} members with role in guild ${guildId}`);
+        const targets = members.filter(m => m.roles.cache.has(pingRoleId) && !m.user.bot);
+        console.log(`Found ${targets.size} members with ping role in guild ${guildId}`);
 
         for (const { s, key } of guildSightings) {
           lastSeen[key] = true;
