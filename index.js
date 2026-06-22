@@ -12,9 +12,8 @@ const client = new Client({
 
 const API_URL = 'https://cosmic-spiral-whisper.lovable.app/api/spiral-sightings';
 const READY_URL = 'https://cosmic-spiral-whisper.lovable.app/api/public/ready-users';
-const notifiedReady = new Set(); // track who we already DMed this cycle
+const notifiedReady = new Set();
 const ROLE_NAME = 'Spiral Egg Ping';
-const GUILD_IDS = ['1376289128169082960', '1241172863223074846']; // Add 1398443076393107628 once bot is in that server
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY;
@@ -74,8 +73,6 @@ const ISLANDS = [
 
 const ALL_EGGS = [...new Set(ISLANDS.flatMap(i => i.spawns.map(s => s.egg)))].sort();
 
-// Commands handled by Lovable — no registration needed here
-
 async function checkReadyUsers() {
   try {
     const res = await fetch(READY_URL);
@@ -87,10 +84,8 @@ async function checkReadyUsers() {
       if (notifiedReady.has(key)) continue;
       notifiedReady.add(key);
 
-      // Find the user in any guild and DM them
-      for (const guildId of GUILD_IDS) {
+      for (const [, guild] of client.guilds.cache) {
         try {
-          const guild = await client.guilds.fetch(guildId);
           const member = await guild.members.fetch(user.discord_user_id).catch(() => null);
           if (!member) continue;
 
@@ -121,43 +116,32 @@ async function checkReadyUsers() {
   }
 }
 
-async function getMembersWithRole(guild, roleName) {
-  const role = guild.roles.cache.find(r => r.name === roleName);
-  if (!role) return [];
-  // Fetch only members with this specific role instead of all members
-  const members = await guild.members.fetch({ force: false });
-  return members.filter(m => m.roles.cache.has(role.id) && !m.user.bot);
-}
-
 async function checkSightings() {
   try {
     const res = await fetch(API_URL);
     const data = await res.json();
     if (!data.sightings) return;
 
-    // Check for new sightings first
     const newSightings = [];
     for (const s of data.sightings) {
       if (new Date(s.createdAt).getTime() < BOT_START) continue;
-      for (const guildId of GUILD_IDS) {
+      for (const [guildId] of client.guilds.cache) {
         const key = s.color + '_' + s.createdAt + '_' + guildId;
         if (!lastSeen[key]) newSightings.push({ s, guildId, key });
       }
     }
 
     if (newSightings.length === 0) return;
-
     console.log(`New sightings found: ${newSightings.length}`);
 
-    for (const guildId of GUILD_IDS) {
+    for (const [guildId, guild] of client.guilds.cache) {
       const guildSightings = newSightings.filter(n => n.guildId === guildId);
       if (guildSightings.length === 0) continue;
       try {
-        const guild = await client.guilds.fetch(guildId);
-        const role = (await guild.roles.fetch()).find(r => r.name === ROLE_NAME);
+        const roles = await guild.roles.fetch();
+        const role = roles.find(r => r.name === ROLE_NAME);
         if (!role) { console.log(`Role "${ROLE_NAME}" not found in guild ${guildId}`); continue; }
-        
-        // Fetch only members with the specific role
+
         const members = await guild.members.fetch({ force: false });
         const targets = members.filter(m => m.roles.cache.has(role.id) && !m.user.bot);
         console.log(`Found ${targets.size} members with role in guild ${guildId}`);
@@ -166,11 +150,7 @@ async function checkSightings() {
           lastSeen[key] = true;
           for (const [, member] of targets) {
             try {
-              await member.send(`🌀 **${s.color} Spiral Egg spotted!**
-Reported by **${s.reportedBy}** in Discord
-You have ~50 minutes to pick it up!
-
-https://beboreport1-ops.github.io/httyd-egg-tracker/`);
+              await member.send(`🌀 **${s.color} Spiral Egg spotted!**\nReported by **${s.reportedBy}** in Discord\nYou have ~50 minutes to pick it up!\n\nhttps://beboreport1-ops.github.io/httyd-egg-tracker/`);
             } catch (e) { console.log(`Failed to DM ${member.user.tag}: ${e.message}`); }
           }
         }
@@ -242,6 +222,7 @@ http.createServer((req, res) => {
 
 client.once('clientReady', async (c) => {
   console.log(`Bot ready as ${c.user.tag}`);
+  console.log(`Active in ${client.guilds.cache.size} guild(s): ${client.guilds.cache.map(g => g.name).join(', ')}`);
   checkSightings();
   setInterval(checkSightings, 30000);
   checkReadyUsers();
