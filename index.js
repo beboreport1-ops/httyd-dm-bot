@@ -21,12 +21,10 @@ async function getPingRoleId(guildId) {
     return data.role_id || null;
   } catch { return null; }
 }
+
 const TOKEN = process.env.DISCORD_TOKEN;
 let lastSeen = {};
 const BOT_START = Date.now();
-
-
-
 
 async function checkReadyUsers() {
   try {
@@ -35,7 +33,7 @@ async function checkReadyUsers() {
     if (!data.users || data.users.length === 0) return;
 
     for (const user of data.users) {
-      const key = user.discord_user_id + '_ready';
+      const key = user.discord_user_id + '_' + user.latest_collected_at;
       if (notifiedReady.has(key)) continue;
       notifiedReady.add(key);
 
