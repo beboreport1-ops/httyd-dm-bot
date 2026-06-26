@@ -14,6 +14,20 @@ const READY_URL = 'https://httyd-egg-track.lovable.app/api/public/ready-users';
 const PING_ROLE_URL = 'https://httyd-egg-track.lovable.app/api/guild-ping-role';
 const notifiedReady = new Set();
 
+function nextUTCHour(sightingTime) {
+  const d = new Date(sightingTime);
+  const top = new Date(Date.UTC(
+    d.getUTCFullYear(),
+    d.getUTCMonth(),
+    d.getUTCDate(),
+    d.getUTCHours(),
+    0, 0, 0
+  ));
+  // Always move to NEXT hour
+  top.setUTCHours(top.getUTCHours() + 1);
+  return top;
+}
+
 async function getPingRoleId(guildId) {
   try {
     const res = await fetch(`${PING_ROLE_URL}?guild_id=${guildId}`);
@@ -100,9 +114,11 @@ async function checkSightings() {
 
         for (const { s, key } of guildSightings) {
           lastSeen[key] = true;
+          const despawn = nextUTCHour(s.createdAt);
+          const minutesLeft = Math.ceil((despawn.getTime() - Date.now()) / 60000);
           for (const [, member] of targets) {
             try {
-              await member.send(`🌀 **${s.color} Spiral Egg spotted!**\nReported by **${s.reportedBy}** in Discord\nYou have ~50 minutes to pick it up!\n\nhttps://httyd-egg-track.lovable.app`);
+              await member.send(`🌀 **${s.color} Spiral Egg spotted!**\nReported by **${s.reportedBy}** in Discord\nDespawns at **${despawn.getUTCHours().toString().padStart(2,'0')}:00 UTC** — ${minutesLeft} minutes left!\n\nhttps://httyd-egg-track.lovable.app`);
             } catch (e) { console.log(`Failed to DM ${member.user.tag}: ${e.message}`); }
           }
         }
