@@ -9,10 +9,14 @@ const client = new Client({
   ]
 });
 
-const API_URL = 'https://httyd-egg-track.lovable.app/api/spiral-sightings';
-const READY_URL = 'https://httyd-egg-track.lovable.app/api/public/ready-users';
-const PING_ROLE_URL = 'https://httyd-egg-track.lovable.app/api/guild-ping-role';
+const BASE_URL = 'https://httyd-egg-track.lovable.app';
+const API_URL = `${BASE_URL}/api/spiral-sightings`;
+const READY_URL = `${BASE_URL}/api/public/ready-users`;
+const READY_GROUPS_URL = `${BASE_URL}/api/public/ready-groups`;
+const PING_ROLE_URL = `${BASE_URL}/api/guild-ping-role`;
+
 const notifiedReady = new Set();
+const notifiedGroups = new Set();
 
 function nextUTCHour(sightingTime) {
   const d = new Date(sightingTime);
@@ -23,7 +27,6 @@ function nextUTCHour(sightingTime) {
     d.getUTCHours(),
     0, 0, 0
   ));
-  // Always move to NEXT hour
   top.setUTCHours(top.getUTCHours() + 1);
   return top;
 }
@@ -34,6 +37,20 @@ async function getPingRoleId(guildId) {
     const data = await res.json();
     return data.role_id || null;
   } catch { return null; }
+}
+
+async function dmUser(discordUserId, embedOrText) {
+  for (const [, guild] of client.guilds.cache) {
+    try {
+      const member = await guild.members.fetch(discordUserId).catch(() => null);
+      if (!member) continue;
+      await member.send(embedOrText);
+      return true;
+    } catch (e) {
+      console.log(`Failed to DM ${discordUserId} in guild ${guild.id}: ${e.message}`);
+    }
+  }
+  return false;
 }
 
 const TOKEN = process.env.DISCORD_TOKEN;
@@ -51,35 +68,53 @@ async function checkReadyUsers() {
       if (notifiedReady.has(key)) continue;
       notifiedReady.add(key);
 
-      for (const [, guild] of client.guilds.cache) {
-        try {
-          const member = await guild.members.fetch(user.discord_user_id).catch(() => null);
-          if (!member) continue;
-
-          await member.send({
-            embeds: [{
-              title: '🥚 All Eggs Ready!',
-              description: `All **${user.total_collected}** of your collected islands are off cooldown and ready to collect again!`,
-              color: 0x57f287,
-              fields: [
-                {
-                  name: '🏝️ Ready Islands',
-                  value: `${user.ready_count} island${user.ready_count !== 1 ? 's' : ''} ready`
-                }
-              ],
-              footer: { text: 'HTTYD Egg Tracker • httyd-egg-track.lovable.app' },
-              url: 'https://httyd-egg-track.lovable.app'
-            }]
-          });
-          console.log(`DMed ${user.username} — all eggs ready`);
-          break;
-        } catch (e) {
-          console.log(`Failed to DM ${user.username}: ${e.message}`);
-        }
-      }
+      const sent = await dmUser(user.discord_user_id, {
+        embeds: [{
+          title: '🥚 All Eggs Ready!',
+          description: `All **${user.total_collected}** of your collected islands are off cooldown and ready to collect again!`,
+          color: 0x57f287,
+          fields: [
+            {
+              name: '🏝️ Ready Islands',
+              value: `${user.ready_count} island${user.ready_count !== 1 ? 's' : ''} ready`
+            }
+          ],
+          footer: { text: 'HTTYD Egg Tracker • httyd-egg-track.lovable.app' },
+          url: BASE_URL
+        }]
+      });
+      if (sent) console.log(`DMed ${user.username} — all eggs ready`);
     }
   } catch (e) {
     console.error('Ready check failed:', e.message);
+  }
+}
+
+async function checkReadyGroups() {
+  try {
+    const res = await fetch(READY_GROUPS_URL);
+    const data = await res.json();
+    if (!data.users || data.users.length === 0) return;
+
+    for (const user of data.users) {
+      if (!user.latest_collected_at) continue;
+      const key = user.discord_user_id + '_group_' + user.group_id + '_' + user.latest_collected_at;
+      if (notifiedGroups.has(key)) continue;
+      notifiedGroups.add(key);
+
+      const sent = await dmUser(user.discord_user_id, {
+        embeds: [{
+          title: '🥚 Group Ready!',
+          description: `All islands in your group **${user.group_name}** are off cooldown and ready to collect!`,
+          color: 0xf0a500,
+          footer: { text: 'HTTYD Egg Tracker • httyd-egg-track.lovable.app' },
+          url: BASE_URL
+        }]
+      });
+      if (sent) console.log(`DMed ${user.username} — group "${user.group_name}" ready`);
+    }
+  } catch (e) {
+    console.error('Ready groups check failed:', e.message);
   }
 }
 
@@ -118,7 +153,7 @@ async function checkSightings() {
           const minutesLeft = Math.ceil((despawn.getTime() - Date.now()) / 60000);
           for (const [, member] of targets) {
             try {
-              await member.send(`🌀 **${s.color} Spiral Egg spotted!**\nReported by **${s.reportedBy}** in Discord\nDespawns at **${despawn.getUTCHours().toString().padStart(2,'0')}:00 UTC** — ${minutesLeft} minutes left!\n\nhttps://httyd-egg-track.lovable.app`);
+              await member.send(`🌀 **${s.color} Spiral Egg spotted!**\nReported by **${s.reportedBy}** in Discord\nDespawns at **${despawn.getUTCHours().toString().padStart(2, '0')}:00 UTC** — ${minutesLeft} minutes left!\n\n${BASE_URL}`);
             } catch (e) { console.log(`Failed to DM ${member.user.tag}: ${e.message}`); }
           }
         }
@@ -140,12 +175,14 @@ client.once('clientReady', async (c) => {
   setInterval(checkSightings, 30000);
   checkReadyUsers();
   setInterval(checkReadyUsers, 3 * 60 * 1000);
+  checkReadyGroups();
+  setInterval(checkReadyGroups, 3 * 60 * 1000);
 });
 
 client.login(TOKEN);
 
 // Self-ping every 10 minutes to prevent Render from sleeping
 setInterval(() => {
-  fetch('https://httyd-dm-bot.onrender.com').catch(() => {});
+  fetch(`${BASE_URL}`).catch(() => {});
   console.log('Self-ping sent');
 }, 10 * 60 * 1000);
